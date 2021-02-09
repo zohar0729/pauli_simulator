@@ -1,20 +1,23 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <vector>
 
 // 設定する実験定数
 const unsigned int N = 10000;
 const unsigned int d = 5;
 const unsigned int num_rounds = 5;
+const unsigned int width = 2 * d - 1;
+const unsigned int max_size = (2 * d - 1) * (2 * d - 1);
 
 // 各操作における誤り発生確率
 const double EP_Preparation = 0.001;
 const double EP_Identity = 0.001;
 const double EP_Hadamard = 0.001;
-const double EP_CNOT = 0.001;
+const double EP_CNot = 0.001;
 const double EP_Measurement = 0.01;
 
 // シンドローム測定に使う回路図
-const char measurement_circuit[][(2 * d - 1) * (2 * d - 1) + 1] = {
+const char measurement_circuit[][max_size + 1] = {
     "----DX---"
     "--ZDZD---"
     "--DXDXDX-"
@@ -35,7 +38,8 @@ const char measurement_circuit[][(2 * d - 1) * (2 * d - 1) + 1] = {
 // M: 測定
 
 // B -> L -> T -> R
-const char X_measurement_circuit[][(2 * d - 1) * (2 * d - 1) + 1] = {
+const char circuit[][max_size + 1] = {
+    /*
     // 測定量子ビットの初期化
     "----I0---"
     "---I-I---"
@@ -116,20 +120,8 @@ const char X_measurement_circuit[][(2 * d - 1) * (2 * d - 1) + 1] = {
     "-MIMIMI--"
     "---I-I---"
     "---MI----",
-};
-
-const char Z_measurement_circuit[][(2 * d - 1) * (2 * d - 1) + 1] = {
-    //
-    "----D----"
-    "--ZDZD---"
-    "--D-D-D--"
-    "ZDZDZDZD-"
-    "D-D-D-D-D"
-    "-DZDZDZDZ"
-    "--D-D-D--"
-    "---DZDZ--"
-    "----D----",
-    // 測定量子ビットの初期化
+    */
+    //初期化
     "----I----"
     "--0I0I---"
     "--I-I-I--"
@@ -140,59 +132,161 @@ const char Z_measurement_circuit[][(2 * d - 1) * (2 * d - 1) + 1] = {
     "---I0I0--"
     "----I----",
     // CNOT1段目
-    "----D----"
-    "--ZDZD---"
-    "--D-D-D--"
-    "ZDZDZDZD-"
-    "D-D-D-D-D"
-    "-DZDZDZDZ"
-    "--D-D-D--"
-    "---DZDZ--"
-    "----D----",
+    "----I----"
+    "--IRDI---"
+    "--I-I-I--"
+    "IRDRDRDI-"
+    "I-I-I-I-I"
+    "-RDRDRDRD"
+    "--I-I-I--"
+    "---RDRD--"
+    "----I----",
+    // CNOT2段目
+    "----B----"
+    "--IIDI---"
+    "--B-B-B--"
+    "IIDIDIDI-"
+    "I-B-B-B-B"
+    "-IDIDIDID"
+    "--I-B-B--"
+    "---IDID--"
+    "----I----",
+    // CNOT3段目
+    "----I----"
+    "--DLDL---"
+    "--I-I-I--"
+    "DLDLDLDL-"
+    "I-I-I-I-I"
+    "-IDLDLDLI"
+    "--I-I-I--"
+    "---IDLI--"
+    "----I----",
+    // CNOT4段目
+    "----I----"
+    "--DIDI---"
+    "--T-T-I--"
+    "DIDIDIDI-"
+    "T-T-T-T-I"
+    "-IDIDIDII"
+    "--T-T-T--"
+    "---IDII--"
+    "----T----",
+    // 測定
+    "----I----"
+    "--MIMI---"
+    "--I-I-I--"
+    "MIMIMIMI-"
+    "I-I-I-I-I"
+    "-IMIMIMIM"
+    "--I-I-I--"
+    "---IMIM--"
+    "----I----"
 };
 
-// パウリ演算子の固有状態としての量子状態を記述するクラス
-class State {
-    public:
-    State(unsigned int d);
-    // 状態を|0>に初期化する
-    int initialize();
-
-    private:
-    // 擬似的な量子ビットの構造体
-    struct qubit {
-        int bit, phase;
-    };
-    // 保持している情報の実体
-    std::vector<qubit> qubits;
+enum ERR {
+    X, Z
 };
+typedef struct error {
+    int id, step;
+}error_t;
 
-// ノイズのある量子ゲートを記述するクラス
-class NoisyGate {
-    public :
-    NoisyGate(unsigned int index);
-    virtual void update_quantum_state(State target) = 0;
-};
+typedef struct pauli_state {
+    int bit, phase;
+}pauli_state_t;
 
-// ノイズのある量子回路を記述するクラス
-class NoisyCircuit {
-    public:
-    NoisyCircuit(unsigned int d);
-    void update_quantum_state(State target);
-};
+int update_pauli_state(pauli_state_t state[max_size]) {
+    int depth = (int)(sizeof(circuit) / sizeof(circuit[0]));
+    printf("circuit depth: %d\n", depth);
+    for (int step = 0; step < depth; step++) {
+        for (int i = 0; i < width; i++) {
+            for (int j = 0; j < width; j++) {
+                char c = circuit[step][i * width + j];
+                int id = i * width + j;
+                int tmp;
+                switch(c) {
+                // 状態を|0>に初期化する
+                case '0':
+                    state[i * width + j].bit = +1;
+                    state[i * width + j].phase = +1;
+                    break;
+                // 何もしない
+                case 'I':
+                    break;
+                // Z基底（ビット）とX基底（位相）を入れ替える
+                case 'H':
+                    tmp = state[i * width + j].bit;
+                    state[i * width + j].bit = state[i * width + j].phase;
+                    state[i * width + j].phase = tmp;
+                    break;
+                // 上方向にCNOTゲートを作用させる
+                case 'T':
+                    if (i > 0 && circuit[step][id - width] == 'D') {
+                        state[id - width].bit = state[id - width].bit * state[id].bit;
+                    }
+                    else {
+                        printf("Invalid index number!!(%d, %d, %d)\n", step, i, j);
+                        return -1;
+                    }
+                    break;
+                // 左方向にCNOTゲートを作用させる
+                case 'L':
+                    if (j > 0 && circuit[step][id - 1] == 'D') {
+                        state[id - 1].bit = state[id - 1].bit * state[id].bit;
+                    }
+                    else {
+                        printf("Invalid index number!!(%d, %d, %d)\n", step, i, j);
+                        return -1;
+                    }
+                    break;
+                // 右方向にCNOTゲートを作用させる
+                case 'R':
+                    if (j < width - 1 && circuit[step][id + 1] == 'D') {
+                        state[id + 1].bit = state[id - 1].bit * state[id].bit;
+                    }
+                    else {
+                        printf("Invalid index number!!(%d, %d, %d)\n", step, i, j);
+                        return -1;
+                    }
+                    break;
+                // 下方向にCNOTゲートを作用させる
+                case 'B':
+                    if (i < width - 1 && circuit[step][id + width] == 'D') {
+                        state[id + width].bit = state[id + width].bit * state[id].bit;
+                    }
+                    else {
+                        printf("Invalid index number!!(%d, %d, %d)\n", step, i, j);
+                        return -1;
+                    }
+                    break;
+                case 'D':
+                    break;
+                case 'M':
+                    printf("%d,", state[id].bit);
+                    break;
+                default:
+                    break;
+                }
+            }
+        }
+    }
 
-// 測定を行うクラス
-class Measurement : public NoisyGate {
-
-};
+    return 0;
+}
 
 int main(int argc, char** argv) {
-    // 回路を準備する
-
+    // 符号状態を作成する
+    pauli_state_t state[max_size];
+    for (int i = 0; i < max_size; i++) {
+      state[i].bit = +1;
+      state[i].phase = +1;
+    }
+    update_pauli_state(state);
     // N回繰り返す
-        // ノイズを入れながら回路をシミュレーションする
-        // 発生したエラーの総数を数える
-            // エラーの総数が1個なら、発生した位置を記録する
-            // それ以外の場合は何も記録を行わない
+    /*
+    for (int count = 10000; count < N; count++) {
+      // ノイズを入れながら回路をシミュレーションする
+      update_pauli_state(state, X_circuit, Z_circuit);
+    }
+    */
     // エラーの発生回数からデコードグラフの重みを計算する
 }
