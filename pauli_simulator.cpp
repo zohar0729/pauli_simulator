@@ -3,7 +3,7 @@
 #include <vector>
 
 // 設定する実験定数
-const unsigned int N = 10000;
+const unsigned int N = 100;
 const unsigned int d = 5;
 const unsigned int num_rounds = 5;
 const unsigned int width = 2 * d - 1;
@@ -39,7 +39,6 @@ const char measurement_circuit[][max_size + 1] = {
 
 // B -> L -> T -> R
 const char circuit[][max_size + 1] = {
-    /*
     // 測定量子ビットの初期化
     "----I0---"
     "---I-I---"
@@ -120,7 +119,6 @@ const char circuit[][max_size + 1] = {
     "-MIMIMI--"
     "---I-I---"
     "---MI----",
-    */
     //初期化
     "----I----"
     "--0I0I---"
@@ -183,20 +181,13 @@ const char circuit[][max_size + 1] = {
     "----I----"
 };
 
-enum ERR {
-    X, Z
-};
-typedef struct error {
-    int id, step;
-}error_t;
-
-typedef struct pauli_state {
+typedef struct pauli_error {
     int bit, phase;
-}pauli_state_t;
+}pauli_error_t;
 
-int update_pauli_state(pauli_state_t state[max_size]) {
+int update_pauli_state(pauli_error_t state[max_size]) {
     int depth = (int)(sizeof(circuit) / sizeof(circuit[0]));
-    printf("circuit depth: %d\n", depth);
+    int num_errors = 0;
     for (int step = 0; step < depth; step++) {
         for (int i = 0; i < width; i++) {
             for (int j = 0; j < width; j++) {
@@ -206,11 +197,24 @@ int update_pauli_state(pauli_state_t state[max_size]) {
                 switch(c) {
                 // 状態を|0>に初期化する
                 case '0':
-                    state[i * width + j].bit = +1;
-                    state[i * width + j].phase = +1;
+                    state[i * width + j].bit = 0;
+                    state[i * width + j].phase = 0;
                     break;
                 // 何もしない
                 case 'I':
+                    break;
+                // Xエラーを意図的に発生させる
+                case 'X':
+                    state[id].bit ^= 1;
+                    break;
+                // Yエラーを意図的に発生させる
+                case 'Y':
+                    state[id].bit ^= 1;
+                    state[id].phase ^= 1;
+                    break;
+                // Zエラーを意図的に発生させる
+                case 'Z':
+                    state[id].phase ^= 1;
                     break;
                 // Z基底（ビット）とX基底（位相）を入れ替える
                 case 'H':
@@ -221,7 +225,8 @@ int update_pauli_state(pauli_state_t state[max_size]) {
                 // 上方向にCNOTゲートを作用させる
                 case 'T':
                     if (i > 0 && circuit[step][id - width] == 'D') {
-                        state[id - width].bit = state[id - width].bit * state[id].bit;
+                        state[id].phase         ^= state[id - width].phase;
+                        state[id - width].bit   ^= state[id].bit;
                     }
                     else {
                         printf("Invalid index number!!(%d, %d, %d)\n", step, i, j);
@@ -231,7 +236,8 @@ int update_pauli_state(pauli_state_t state[max_size]) {
                 // 左方向にCNOTゲートを作用させる
                 case 'L':
                     if (j > 0 && circuit[step][id - 1] == 'D') {
-                        state[id - 1].bit = state[id - 1].bit * state[id].bit;
+                        state[id].phase     ^= state[id - 1].phase;
+                        state[id - 1].bit   ^= state[id].bit;
                     }
                     else {
                         printf("Invalid index number!!(%d, %d, %d)\n", step, i, j);
@@ -241,7 +247,8 @@ int update_pauli_state(pauli_state_t state[max_size]) {
                 // 右方向にCNOTゲートを作用させる
                 case 'R':
                     if (j < width - 1 && circuit[step][id + 1] == 'D') {
-                        state[id + 1].bit = state[id - 1].bit * state[id].bit;
+                        state[id].phase     ^= state[id + 1].phase;
+                        state[id + 1].bit   ^= state[id].bit;
                     }
                     else {
                         printf("Invalid index number!!(%d, %d, %d)\n", step, i, j);
@@ -251,17 +258,20 @@ int update_pauli_state(pauli_state_t state[max_size]) {
                 // 下方向にCNOTゲートを作用させる
                 case 'B':
                     if (i < width - 1 && circuit[step][id + width] == 'D') {
-                        state[id + width].bit = state[id + width].bit * state[id].bit;
+                        state[id].phase         ^= state[id + width].phase;
+                        state[id + width].bit   ^= state[id].bit;
                     }
                     else {
                         printf("Invalid index number!!(%d, %d, %d)\n", step, i, j);
                         return -1;
                     }
                     break;
-                case 'D':
-                    break;
+                // 最終的に残ったエラーの検出を行う
                 case 'M':
-                    printf("%d,", state[id].bit);
+                    if (state[id].bit == 1) {
+                        printf("No.%d\tstep: %d/(%d, %d)\n", num_errors, step, i, j);
+                        num_errors++;
+                    }
                     break;
                 default:
                     break;
@@ -270,23 +280,25 @@ int update_pauli_state(pauli_state_t state[max_size]) {
         }
     }
 
-    return 0;
+    return num_errors;
 }
 
 int main(int argc, char** argv) {
     // 符号状態を作成する
-    pauli_state_t state[max_size];
+    pauli_error_t state[max_size];
     for (int i = 0; i < max_size; i++) {
-      state[i].bit = +1;
-      state[i].phase = +1;
+      state[i].bit = 0;
+      state[i].phase = 0;
     }
-    update_pauli_state(state);
+    //update_pauli_state(state);
     // N回繰り返す
-    /*
-    for (int count = 10000; count < N; count++) {
-      // ノイズを入れながら回路をシミュレーションする
-      update_pauli_state(state, X_circuit, Z_circuit);
+    for (int count = 0; count < N; count++) {
+        int num_errors = 0;
+        // ノイズを入れながら回路をシミュレーションする
+        for (int round = 0; round < num_rounds; round++) {
+            update_pauli_state(state);
+        }
     }
-    */
+    
     // エラーの発生回数からデコードグラフの重みを計算する
 }
