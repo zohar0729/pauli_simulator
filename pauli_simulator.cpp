@@ -1,20 +1,25 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <vector>
+#include <time.h>
+
+#include "random.h"
+
+#define REAL_EP
 
 // 設定する実験定数
-const unsigned int N = 100;
+const unsigned int N = 1E5;
 const unsigned int d = 5;
 const unsigned int num_rounds = 5;
 const unsigned int width = 2 * d - 1;
-const unsigned int max_size = (2 * d - 1) * (2 * d - 1);
+const unsigned int max_size = width * width;
 
 // 各操作における誤り発生確率
-const double EP_Preparation = 0.001;
-const double EP_Identity = 0.001;
-const double EP_Hadamard = 0.001;
-const double EP_CNot = 0.001;
-const double EP_Measurement = 0.01;
+double coef = 2.0E-1;
+const double EP_Preparation = coef * 0.0015;
+const double EP_Identity    = coef * 0.0015;
+const double EP_Hadamard    = coef * 0.0015;
+const double EP_CNot        = coef * 0.0036;
+const double EP_Measurement = coef * 0.038;
 
 // シンドローム測定に使う回路図
 const char measurement_circuit[][max_size + 1] = {
@@ -36,6 +41,7 @@ const char measurement_circuit[][max_size + 1] = {
 // T,L,R,B: CNOT演算のコントロール部（上、左、右、下に接続）
 // D: CNOT演算のターゲット部
 // M: 測定
+// X,Y,Z: 各種パウリ演算
 
 // B -> L -> T -> R
 const char circuit[][max_size + 1] = {
@@ -182,51 +188,166 @@ const char circuit[][max_size + 1] = {
 };
 
 typedef struct pauli_error {
-    int bit, phase;
+    int bit, phase, old_bit;
+    int reg;
 }pauli_error_t;
+
+// 各種パウリ演算
+// エラーとして発生するので関数にまとめておく
+void Xgate(int id, pauli_error_t state[max_size]) {
+    state[id].bit ^= 1;
+    return;
+}
+void Ygate(int id, pauli_error_t state[max_size]) {
+    state[id].bit ^= 1;
+    state[id].phase ^= 1;
+    return;
+}
+void Zgate(int id, pauli_error_t state[max_size]) {
+    state[id].phase ^= 1;
+    return;
+}
+void Igate(int id, pauli_error_t state[max_size]) {
+    return;
+}
+
+// 1量子ビットエラーを記述する関数
+void one_qubit_noise(
+    int id, 
+    pauli_error_t state[max_size], 
+    void (*ops[])(int, pauli_error_t*), 
+    const double probs[],
+    int num_ops
+) {
+    double r = urand();
+    double s = 0.0;
+    int i;
+
+    for (i = 0; i < num_ops; i++) {
+        s += probs[i];
+        if(r < s) break;
+    }
+    (*ops[i])(id, state);
+    return;
+}
+
+// 2量子ビットエラーを記述する関数
+// 作ってはみたけど結局使わないかな
+void two_qubit_noise(
+    int id1, int id2, 
+    pauli_error_t state[max_size],
+    void (*ops[])(int, int, pauli_error_t*), 
+    const double probs[],
+    int num_ops
+) {
+    double r = urand();
+    double s = 0.0;
+    int i, j;
+
+    for (i = 0; i < num_ops; i++) {
+        s += probs[i];
+        if(r < s) break;
+    }
+    (*ops[i])(id1, id2, state);
+
+    return;
+}
+// 1量子ビットのdepolarizing channel
+void depolarizing_noise(int id, pauli_error_t state[max_size], double error_prob) {
+    void (*ops[])(int, pauli_error_t*) = {
+        &Igate, 
+        &Xgate, 
+        &Ygate, 
+        &Zgate
+    };
+    double probs[] = {
+        1.0 - (3.0 * error_prob), 
+        error_prob, 
+        error_prob, 
+        error_prob
+    };
+
+    one_qubit_noise(id, state, ops, probs, 4);
+    return;
+}
+void readout_noise(int id, pauli_error_t state[max_size], double error_prob) {
+    void (*ops[])(int, pauli_error_t*) = {
+        &Igate, 
+        &Xgate
+    };
+    double probs[] = {
+        1.0 - error_prob,
+        error_prob
+    };
+
+    one_qubit_noise(id, state, ops, probs, 2);
+    return;
+}
+// 2量子ビットのdepolarizing channel
+// これ1量子ビットのものを別々に作用させるのと何が違うんだろう……？
+void two_qubit_depolarizing_noise(int id1, int id2, pauli_error_t state[max_size], double error_prob) {
+    void (*ops[])(int, pauli_error_t*) = {
+        &Igate, 
+        &Xgate, 
+        &Ygate, 
+        &Zgate
+    };
+    double probs[] = {
+        1.0 - (3.0 * error_prob), 
+        error_prob, 
+        error_prob, 
+        error_prob
+    };
+
+    one_qubit_noise(id1, state, ops, probs, 4);
+    one_qubit_noise(id2, state, ops, probs, 4);
+    return;
+}
 
 int update_pauli_state(pauli_error_t state[max_size]) {
     int depth = (int)(sizeof(circuit) / sizeof(circuit[0]));
     int num_errors = 0;
+
     for (int step = 0; step < depth; step++) {
         for (int i = 0; i < width; i++) {
             for (int j = 0; j < width; j++) {
-                char c = circuit[step][i * width + j];
                 int id = i * width + j;
                 int tmp;
+                char c = circuit[step][id];
                 switch(c) {
                 // 状態を|0>に初期化する
                 case '0':
-                    state[i * width + j].bit = 0;
-                    state[i * width + j].phase = 0;
+                    depolarizing_noise(id, state, EP_Preparation);
                     break;
                 // 何もしない
                 case 'I':
+                    depolarizing_noise(id, state, EP_Identity);
                     break;
                 // Xエラーを意図的に発生させる
                 case 'X':
-                    state[id].bit ^= 1;
+                    Xgate(id, state);
                     break;
                 // Yエラーを意図的に発生させる
                 case 'Y':
-                    state[id].bit ^= 1;
-                    state[id].phase ^= 1;
+                    Ygate(id, state);
                     break;
                 // Zエラーを意図的に発生させる
                 case 'Z':
-                    state[id].phase ^= 1;
+                    Zgate(id, state);
                     break;
                 // Z基底（ビット）とX基底（位相）を入れ替える
                 case 'H':
-                    tmp = state[i * width + j].bit;
-                    state[i * width + j].bit = state[i * width + j].phase;
-                    state[i * width + j].phase = tmp;
+                    tmp = state[id].bit;
+                    state[id].bit = state[id].phase;
+                    state[id].phase = tmp;
+                    depolarizing_noise(id, state, EP_Hadamard);
                     break;
                 // 上方向にCNOTゲートを作用させる
                 case 'T':
                     if (i > 0 && circuit[step][id - width] == 'D') {
                         state[id].phase         ^= state[id - width].phase;
                         state[id - width].bit   ^= state[id].bit;
+                        two_qubit_depolarizing_noise(id, id - width, state, EP_CNot);
                     }
                     else {
                         printf("Invalid index number!!(%d, %d, %d)\n", step, i, j);
@@ -238,6 +359,7 @@ int update_pauli_state(pauli_error_t state[max_size]) {
                     if (j > 0 && circuit[step][id - 1] == 'D') {
                         state[id].phase     ^= state[id - 1].phase;
                         state[id - 1].bit   ^= state[id].bit;
+                        two_qubit_depolarizing_noise(id, id - 1, state, EP_CNot);
                     }
                     else {
                         printf("Invalid index number!!(%d, %d, %d)\n", step, i, j);
@@ -249,6 +371,7 @@ int update_pauli_state(pauli_error_t state[max_size]) {
                     if (j < width - 1 && circuit[step][id + 1] == 'D') {
                         state[id].phase     ^= state[id + 1].phase;
                         state[id + 1].bit   ^= state[id].bit;
+                        two_qubit_depolarizing_noise(id, id + 1, state, EP_CNot);
                     }
                     else {
                         printf("Invalid index number!!(%d, %d, %d)\n", step, i, j);
@@ -260,6 +383,7 @@ int update_pauli_state(pauli_error_t state[max_size]) {
                     if (i < width - 1 && circuit[step][id + width] == 'D') {
                         state[id].phase         ^= state[id + width].phase;
                         state[id + width].bit   ^= state[id].bit;
+                        two_qubit_depolarizing_noise(id, id + width, state, EP_CNot);
                     }
                     else {
                         printf("Invalid index number!!(%d, %d, %d)\n", step, i, j);
@@ -268,10 +392,9 @@ int update_pauli_state(pauli_error_t state[max_size]) {
                     break;
                 // 最終的に残ったエラーの検出を行う
                 case 'M':
-                    if (state[id].bit == 1) {
-                        printf("No.%d\tstep: %d/(%d, %d)\n", num_errors, step, i, j);
-                        num_errors++;
-                    }
+                    readout_noise(id, state, EP_Measurement);
+                    state[id].reg = state[id].bit ^ state[id].old_bit;
+                    state[id].old_bit = state[id].bit;
                     break;
                 default:
                     break;
@@ -283,22 +406,148 @@ int update_pauli_state(pauli_error_t state[max_size]) {
     return num_errors;
 }
 
+// 隣接しているかどうかの判定も煩雑なので関数化
+int is_nearby_pos(int id1, int id2) {
+    if      (id1 - id2 == 2)            return 1;
+    else if (id1 - id2 == -2)           return 1;
+    else if (id1 - id2 == width * 2)    return 1;
+    else if (id1 - id2 == width * (-2)) return 1;
+    else return 0; 
+}
+int is_nearby_step(int step1, int step2) {
+    if      (step1 - step2 ==  1) return 1;
+    else if (step1 - step2 == -1) return 1;
+    else return 0;
+}
+
 int main(int argc, char** argv) {
+    // 乱数を初期化する
+    initrand(1997);
+
     // 符号状態を作成する
     pauli_error_t state[max_size];
-    for (int i = 0; i < max_size; i++) {
-      state[i].bit = 0;
-      state[i].phase = 0;
+    
+    // 差分シンドローム
+    int syndrome[num_rounds + 1][max_size];
+
+    // 反転したシンドロームのペア
+    int pair[2][3];
+    
+    // エラーが発生した回数
+    // 時間方向のペアも発生しうるのでそれを考慮した要素数になっている
+    int weight[2][2 * num_rounds - 1][max_size];
+
+    // 反転したシンドローム測定の総数
+    int num_flips[N];
+    for (int i = 0; i < N; i++) {
+        num_flips[i] = 0;
     }
-    //update_pauli_state(state);
+
+    // 特定されたエッジの総数
+    int sum_edges = 0;
+
     // N回繰り返す
     for (int count = 0; count < N; count++) {
-        int num_errors = 0;
+        //printf("sample: %d\n", count);
+        // 状態を初期化する
+        for (int i = 0; i < max_size; i++) {
+            state[i].bit = 0;
+            state[i].phase = 0;
+            state[i].old_bit = 0;
+            state[i].reg = 0;
+        }
+        // 差分シンドローム・デコードグラフを初期化する
+        for (int i = 0; i < num_rounds + 1; i++) {
+            for (int j = 0; j < max_size; j++) {
+                syndrome[i][j] = 0;
+            }
+        }
         // ノイズを入れながら回路をシミュレーションする
         for (int round = 0; round < num_rounds; round++) {
             update_pauli_state(state);
+            for (int i = 0; i < max_size; i++){
+                syndrome[round + 1][i] = state[i].reg;
+            }
+        }
+        // シンドロームを差分シンドロームに変換する
+        for (int i = 0; i < num_rounds; i++) {
+            for (int j = 0; j < max_size; j++){
+                syndrome[i][j] = syndrome[i][j] ^ syndrome[i + 1][j];
+                if (syndrome[i][j] == 1) {
+                    //printf("(%d, %d, %d) --- %c syndrome\n", i, j / width, j % width, (j % width % 2 == 0) ? 'Z' : 'X');
+                    pair[num_flips[count] % 2][0] = i;
+                    pair[num_flips[count] % 2][1] = j / width;
+                    pair[num_flips[count] % 2][2] = j % width;
+                    num_flips[count]++;
+                }
+            }
+        }
+        // 反転したシンドローム測定が1個以上2個以下ならエッジへの対応づけを行う
+        if (num_flips[count] > 0 && num_flips[count] < 3) {
+            if (num_flips[count] == 1) {
+                int step = pair[0][0];
+                int id = pair[0][1] * width + pair[0][2];
+                // 左上半分の開境界に接したZエラーの場合
+                if (pair[0][1] + pair[0][2] < 8 && pair[0][1] % 2 == 0) {
+                    weight[0][2 * step][id - 1]++;
+                    sum_edges++;
+                }
+                // 右下半分の開境界に接したZエラーの場合
+                else if (pair[0][1] + pair[0][2] > 8 && pair[0][1] % 2 == 0) {
+                    weight[0][2 * step][id + 1]++;
+                    sum_edges++;
+                }
+                // 右上半分の開境界に接したXエラーの場合
+                else if (pair[0][1] < pair[0][2] && pair[0][1] % 2 == 1) {
+                    weight[1][2 * step][id - width]++;
+                    sum_edges++;
+                }
+                // 左下半分の開境界に接したXエラーの場合
+                else if (pair[0][1] > pair[0][2] && pair[0][1] % 2 == 1) {
+                    weight[1][2 * step][id + width]++;
+                    sum_edges++;
+                }
+                // それ以外の場合……え、それ以外って何？
+                else {
+                    printf("Something cursed happend!!!");
+                    return -1;
+                }
+            }
+            else {
+                // 添字で間違えて修正はしたくないので変数化
+                int step1 = pair[0][0];
+                int step2 = pair[1][0];
+                int id1 = pair[0][1] * width + pair[0][2];
+                int id2 = pair[1][1] * width + pair[1][2];
+                int type = pair[0][1] % 2;
+
+                // 隣接した位置にあるシンドローム反転について具体的に考えられるパターンは3つ
+                // 同一のステップで隣接した空間位置にある(データ量子ビットのエラー)
+                if (step1 == step2 && is_nearby_pos(id1, id2)) {
+                    weight[type][step1 * 2][(id1 + id2) / 2]++;
+                    sum_edges++;
+                }
+                // 隣接したステップで同一の空間位置にある（測定エラー）
+                else if (is_nearby_step(step1, step2) && id1 == id2) {
+                    weight[type][step1 + step2][id1]++;
+                    sum_edges++;
+                }
+                // 隣接したステップで隣接した空間位置にある（フックエラー）
+                else if (is_nearby_step(step1, step2) && is_nearby_pos(id1, id2)) {
+                    if ((step1 - step2) * (id1 - id2) > 0) {
+                        weight[type][step1 + step2][(id1 + id2) / 2]++;
+                        sum_edges++;
+                    }
+                }
+                // それ以外の場合（別々の位置に発生した開境界エラーとか）
+                else {
+                    continue;
+                }
+            }
+        }
+        else {
+            continue;
         }
     }
-    
-    // エラーの発生回数からデコードグラフの重みを計算する
+    printf("Earned edge errors: %d/%d\n", sum_edges, N);
 }
