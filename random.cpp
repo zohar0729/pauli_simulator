@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 
@@ -30,6 +31,18 @@ double urand(){
     xorsft_z = xorsft_w;
     xorsft_w ^= t ^ (t >> 8) ^ (xorsft_w >> 19);
     return ((xorsft_x + 0.5) / 4294967296.0 + xorsft_w) / 4294967296.0;
+}
+
+void set_params(uint32_t cxorsft_x, uint32_t cxorsft_y, uint32_t cxorsft_z, uint32_t cxorsft_w) {
+    xorsft_x = cxorsft_x;
+    xorsft_y = cxorsft_y;
+    xorsft_z = cxorsft_z;
+    xorsft_w = cxorsft_w;
+}
+
+void get_params() {
+    printf("%u, %u, %u, %u\t\n", xorsft_x, xorsft_y, xorsft_z, xorsft_w);
+    fflush(stdout);
 }
 
 #else

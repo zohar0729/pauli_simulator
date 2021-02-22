@@ -5,5 +5,7 @@
 
 void initrand(uint32_t seed);
 double urand();
+void set_params(uint32_t cxorsft_x, uint32_t cxorsft_y, uint32_t cxorsft_z, uint32_t cxorsft_w);
+void get_params();
 
 #endif
