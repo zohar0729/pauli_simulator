@@ -7,14 +7,14 @@
 #define REAL_EP
 
 // 設定する実験定数
-const unsigned int N = 1E5;
+const unsigned int N = 1E6;
 const unsigned int d = 5;
 const unsigned int num_rounds = 5;
 const unsigned int width = 2 * d - 1;
 const unsigned int max_size = width * width;
 
 // 各操作における誤り発生確率
-double coef = 2.0E-1;
+double coef = 5.0E-2;
 const double EP_Preparation = coef * 0.0015;
 const double EP_Identity    = coef * 0.0015;
 const double EP_Hadamard    = coef * 0.0015;
@@ -304,7 +304,8 @@ void two_qubit_depolarizing_noise(int id1, int id2, pauli_error_t state[max_size
     return;
 }
 
-int update_pauli_state(pauli_error_t state[max_size]) {
+// パウリエラーの時間発展を調べる
+int update_pauli_state(pauli_error_t state[max_size], int m_error) {
     int depth = (int)(sizeof(circuit) / sizeof(circuit[0]));
     int num_errors = 0;
 
@@ -392,7 +393,9 @@ int update_pauli_state(pauli_error_t state[max_size]) {
                     break;
                 // 最終的に残ったエラーの検出を行う
                 case 'M':
-                    readout_noise(id, state, EP_Measurement);
+                    //if(m_error == 1) {
+                        readout_noise(id, state, EP_Measurement);
+                    //}
                     state[id].reg = state[id].bit ^ state[id].old_bit;
                     state[id].old_bit = state[id].bit;
                     break;
@@ -436,6 +439,13 @@ int main(int argc, char** argv) {
     // エラーが発生した回数
     // 時間方向のペアも発生しうるのでそれを考慮した要素数になっている
     int weight[2][2 * num_rounds - 1][max_size];
+    for (int i = 0; i < 2; i++) {
+        for (int j = 0; j < 2 * num_rounds; j++) {
+            for (int k = 0; k < max_size; k++) {
+                weight[i][j][k] = 0;
+            }
+        }
+    }
 
     // 反転したシンドローム測定の総数
     int num_flips[N];
@@ -448,7 +458,13 @@ int main(int argc, char** argv) {
 
     // N回繰り返す
     for (int count = 0; count < N; count++) {
-        //printf("sample: %d\n", count);
+        for (int i = 0; i < 50; i++) {
+            if (i < count * 50 / N) printf("|", count);
+            else printf("_");
+        }
+        printf("%02d%%", count * 100 / N);
+        printf("\r");
+        fflush(stdout);
         // 状態を初期化する
         for (int i = 0; i < max_size; i++) {
             state[i].bit = 0;
@@ -464,7 +480,7 @@ int main(int argc, char** argv) {
         }
         // ノイズを入れながら回路をシミュレーションする
         for (int round = 0; round < num_rounds; round++) {
-            update_pauli_state(state);
+            update_pauli_state(state, (round == num_rounds - 1) ? 0 : 1);
             for (int i = 0; i < max_size; i++){
                 syndrome[round + 1][i] = state[i].reg;
             }
@@ -505,6 +521,13 @@ int main(int argc, char** argv) {
                 // 左下半分の開境界に接したXエラーの場合
                 else if (pair[0][1] > pair[0][2] && pair[0][1] % 2 == 1) {
                     weight[1][2 * step][id + width]++;
+                    if (id + width == 8 * width + 6) {
+                        printf("error!! at sample %d\n", count);
+                        printf("num_flips: %d\n", num_flips[count]);
+                        printf("(%d, %d, %d), ", pair[0][0], pair[0][1], pair[0][2]);
+                        printf("(%d, %d, %d)", pair[1][0], pair[1][1], pair[1][2]);
+                        return -1;
+                    }
                     sum_edges++;
                 }
                 // それ以外の場合……え、それ以外って何？
@@ -549,5 +572,21 @@ int main(int argc, char** argv) {
             continue;
         }
     }
-    printf("Earned edge errors: %d/%d\n", sum_edges, N);
+    printf("\nEarned edge errors: %d/%d\n", sum_edges, N);
+    for (int i = 0; i < 2 * num_rounds - 1; i++) {
+        printf("step: %d%s\n", i / 2, ((i % 2) == 1) ? "+1/2" : "");
+        for (int j = 0; j < max_size; j++) {
+            if (weight[1][i][j] != 0) {
+                printf("%d", weight[1][i][j]);
+            }
+            else {
+                printf(" ");
+            }
+            printf("\t");
+            if (j % 9 == 8) {
+                printf("\n\n\n");
+            }
+        }
+        printf("\n");
+    }
 }
