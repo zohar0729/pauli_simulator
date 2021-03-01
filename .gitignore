@@ -30,3 +30,11 @@
 *.exe
 *.out
 *.app
+
+# Other
+*.dat
+*.pdf
+*.dSYM/*
+*.json
+*.png
+*.DS_Store

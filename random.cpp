@@ -10,7 +10,7 @@ uint32_t xorsft_w = 88675123;
 #define XORSHIFT
 #ifdef XORSHIFT
 
-void initrand(uint32_t seed){
+void init_rand(uint32_t seed){
     do {
         seed = seed * 1812433253 + 1; seed ^= seed << 13; seed ^= seed >> 17;
         xorsft_x = 123464980 ^ seed;
