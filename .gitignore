@@ -30,6 +30,7 @@
 *.exe
 *.out
 *.app
+pauli_simulator
 
 # Other
 *.dat
