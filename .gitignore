@@ -30,7 +30,11 @@
 *.exe
 *.out
 *.app
-.vscode/c_cpp_properties.json
-.vscode/launch.json
-.vscode/tasks.json
-pauli_simulator.out.dSYM/Contents/Info.plist
+
+# Other
+*.dat
+*.pdf
+*.dSYM/*
+*.json
+*.png
+*.DS_Store
