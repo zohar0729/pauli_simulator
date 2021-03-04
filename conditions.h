@@ -8,7 +8,7 @@
 #define DEF_MAIN_H
 
 // 設定する実験定数
-const unsigned int N = 1E6;
+const unsigned int N = 1E5;
 const unsigned int d = 5;
 const unsigned int num_rounds = 5;
 const unsigned int width = 2 * d - 1;

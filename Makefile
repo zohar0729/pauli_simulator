@@ -27,4 +27,4 @@ $(PROG) : $(OBJS)
 
 .PHONY: clean
 clean:
-	$(RM) $(PROG) $(OBJS) $(DEPS)
+	$(RM) $(PROG) $(OBJS) $(DEPS) *.dat *.png

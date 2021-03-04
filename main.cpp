@@ -24,14 +24,6 @@ int output_gnuplot(int weight[2][2 * num_rounds - 1][max_size]) {
     char filename[64];
 
     // 重みデータをファイルに出力する
-    gp = popen("gnuplot -persist", "w");
-    fprintf(gp, 
-        "set dgrid 200, 200 qnorm 2\n"
-        //"set pm3d map\n"
-        "set pm3d at bs\n"
-        "unset surf\n"
-        //"set size square\n"
-    );
     for (int type = 0; type < 2; type++) {
         for (int round = 0; round < 2 * num_rounds - 1; round++) {
             // ラウンドごとにファイルを開く
@@ -46,21 +38,10 @@ int output_gnuplot(int weight[2][2 * num_rounds - 1][max_size]) {
                 fprintf(data, "%d\t%d\t%d\n", id / width, id % width, weight[type][round][id]);
             }
             fclose(data);
-
-            // データから読み込んでプロットする
-            fprintf(gp, "set term pngcairo size 1080, 1080 font \",24\"\n", round * 2 + type + 1);
-            fprintf(gp, "set out \"%s.png\"\n", filename);
-            fprintf(gp, 
-                "unset key\n"
-                "set zlabel \"Times\" rotate by 90\n"
-            );
-            fprintf(gp, "set title \"%c-Type Syndrome / Round %d%s\"\n", 
-                (type == 0) ? 'Z' : 'X',
-                round / 2,
-                (round % 2 == 1) ? "+1/2" : "");
-            fprintf(gp, "splot \"%s\" using 1:2:3\n", filename);
         }
     }
+    // デフォルトのプロッタで画像を出力する
+    gp = popen("gnuplot -persist 3dplot.plt", "w");
     pclose(gp);
 
     return 0;
@@ -98,10 +79,8 @@ int main(int argc, char** argv) {
     int sum_edges = 0;
 
     // N回繰り返す
-    // set_params(1817384660, 1591543800, 3848875990, 2608173570);
     for (int count = 0; count < N; count++) {
         update_progress(count);
-        //if (count == 1797) get_params();
         // エラーの総数をリセットする
         num_flips = 0;
         // 状態を初期化する
@@ -173,4 +152,6 @@ int main(int argc, char** argv) {
         printf("\n");
     }
     output_gnuplot(weight);
+
+    return 0;
 }
