@@ -12,6 +12,7 @@ do for[filename in filelist] {
     set out filename.".png"
     unset key
     set zlabel "Times" rotate by 90
+
     # ファイル名からグラフタイトルに必要な情報を抜き出し
     # 何文字目という情報で切り出しているので1桁の数字しか対応していない
     # それ以上の桁数に対応させたい場合は0埋めでファイル名を出力した上で添字を変えよう
@@ -22,3 +23,6 @@ do for[filename in filelist] {
 
     splot filename using 1:2:3
 }
+
+# gnuplotを終了する
+exit

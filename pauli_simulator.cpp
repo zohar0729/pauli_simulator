@@ -22,7 +22,15 @@ void Zgate(int id, pauli_error_t state[max_size]) {
 void Igate(int id, pauli_error_t state[max_size]) {
     return;
 }
-
+void Hgate(int id, pauli_error_t state[max_size]) {
+    int tmp = state[id].bit;
+    state[id].bit = state[id].phase;
+    state[id].phase = tmp;
+}
+void CNOTgate(int ctrl, int targ, pauli_error_t state[max_size]) {
+    state[ctrl].phase ^= state[targ].phase;
+    state[targ].bit   ^= state[ctrl].bit;
+}
 // 1量子ビットエラーを記述する関数
 void one_qubit_noise(
     int id, 
@@ -54,7 +62,7 @@ void two_qubit_noise(
 ) {
     double r = urand();
     double s = 0.0;
-    int i, j;
+    int i;
 
     for (i = 0; i < num_ops; i++) {
         s += probs[i];
@@ -127,10 +135,8 @@ void update_pauli_state(
         for (int i = 0; i < width; i++) {
             for (int j = 0; j < width; j++) {
                 int id = i * width + j;
-                int tmp;
-                char c = circuit[step][id];
                 int pseudo_syndrome;
-                switch(c) {
+                switch(circuit[step][id]) {
                 // 状態を|0>に初期化する
                 case '0':
                     state[id].bit = 0;
@@ -154,58 +160,28 @@ void update_pauli_state(
                     break;
                 // Z基底（ビット）とX基底（位相）を入れ替える
                 case 'H':
-                    tmp = state[id].bit;
-                    state[id].bit = state[id].phase;
-                    state[id].phase = tmp;
+                    Hgate(id, state);
                     depolarizing_noise(id, state, EP_Hadamard);
                     break;
                 // 上方向にCNOTゲートを作用させる
                 case 'T':
-                    if (i > 0 && circuit[step][id - width] == 'D') {
-                        state[id].phase         ^= state[id - width].phase;
-                        state[id - width].bit   ^= state[id].bit;
-                        two_qubit_depolarizing_noise(id, id - width, state, EP_CNot);
-                    }
-                    else {
-                        printf("Invalid index number!!(%d, %d, %d)\n", step, i, j);
-                        return;
-                    }
+                    CNOTgate(id, id - width, state);
+                    two_qubit_depolarizing_noise(id, id - width, state, EP_CNot);
                     break;
                 // 左方向にCNOTゲートを作用させる
                 case 'L':
-                    if (j > 0 && circuit[step][id - 1] == 'D') {
-                        state[id].phase     ^= state[id - 1].phase;
-                        state[id - 1].bit   ^= state[id].bit;
-                        two_qubit_depolarizing_noise(id, id - 1, state, EP_CNot);
-                    }
-                    else {
-                        printf("Invalid index number!!(%d, %d, %d)\n", step, i, j);
-                        return;
-                    }
+                    CNOTgate(id, id - 1, state);
+                    two_qubit_depolarizing_noise(id, id - 1, state, EP_CNot);
                     break;
                 // 右方向にCNOTゲートを作用させる
                 case 'R':
-                    if (j < width - 1 && circuit[step][id + 1] == 'D') {
-                        state[id].phase     ^= state[id + 1].phase;
-                        state[id + 1].bit   ^= state[id].bit;
-                        two_qubit_depolarizing_noise(id, id + 1, state, EP_CNot);
-                    }
-                    else {
-                        printf("Invalid index number!!(%d, %d, %d)\n", step, i, j);
-                        return;
-                    }
+                    CNOTgate(id, id + 1, state);
+                    two_qubit_depolarizing_noise(id, id + 1, state, EP_CNot);
                     break;
                 // 下方向にCNOTゲートを作用させる
                 case 'B':
-                    if (i < width - 1 && circuit[step][id + width] == 'D') {
-                        state[id].phase         ^= state[id + width].phase;
-                        state[id + width].bit   ^= state[id].bit;
-                        two_qubit_depolarizing_noise(id, id + width, state, EP_CNot);
-                    }
-                    else {
-                        printf("Invalid index number!!(%d, %d, %d)\n", step, i, j);
-                        return;
-                    }
+                    CNOTgate(id, id + width, state);
+                    two_qubit_depolarizing_noise(id, id + width, state, EP_CNot);
                     break;
                 // 最終的に残ったエラーの検出を行う
                 case 'P':

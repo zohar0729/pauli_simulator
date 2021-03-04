@@ -7,7 +7,7 @@ DEPS := $(SRCS:.cpp=.d)
 # 定義済みマクロの再定義
 CC = gcc-7
 CXX = g++-7
-CPPFLAGS = -O2
+CPPFLAGS = -O4 -Wall -g
 
 #プライマリターゲット
 all: $(PROG)
@@ -28,3 +28,8 @@ $(PROG) : $(OBJS)
 .PHONY: clean
 clean:
 	$(RM) $(PROG) $(OBJS) $(DEPS) *.dat *.png
+
+.PHONY: rebuild
+rebuild:
+	make clean 
+	make all

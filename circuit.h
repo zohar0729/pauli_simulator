@@ -1,3 +1,9 @@
+/*
+    circuit.h
+    シンドローム測定に利用する量子回路を記述している
+    conditions.hに書くのはちょっと違うなと思ったのでここに移動させた
+*/
+
 #ifndef DEF_CIRCUIT_H
 #define DEF_CIRCUIT_H
 

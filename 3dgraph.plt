@@ -22,3 +22,6 @@ do for[filename in filelist] {
 
     splot filename using 1:2:3
 }
+
+# gnuplotを終了する
+exit
